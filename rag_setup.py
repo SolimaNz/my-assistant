@@ -29,31 +29,17 @@ class GeminiEmbeddings(Embeddings):
 
 def setup_rag():
     print("Starting RAG setup...")
-
     if os.path.exists("data/sample.txt"):
         loader = TextLoader("data/sample.txt", encoding="utf-8")
     else:
         print("Error: data/sample.txt not found!")
         return None
-
     docs = loader.load()
-
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=100
-    )
+    splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
     chunks = splitter.split_documents(docs)
-
     embeddings = GeminiEmbeddings()
-
     print(f"Embedding {len(chunks)} chunks into ChromaDB...")
-
-    db = Chroma.from_documents(
-        chunks,
-        embeddings,
-        persist_directory=os.getenv("CHROMA_DIR", "chroma_db")
-    )
-
+    db = Chroma.from_documents(chunks, embeddings, persist_directory=os.getenv("CHROMA_DIR", "chroma_db"))
     print("RAG setup complete!")
     return db.as_retriever(search_kwargs={"k": 3})
 
