@@ -303,7 +303,7 @@ def ask():
                 temperature=0.75,
                 top_p=0.95,
                 max_output_tokens=2048,
-                # tools=[types.Tool(google_search=types.GoogleSearch())],  # disabled: testing compatibility
+                tools=[types.Tool(google_search=types.GoogleSearch())],
             )
         )
         answer = response.text.strip() if response.text else "I couldn't generate a response. Please try again."
