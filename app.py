@@ -12,6 +12,7 @@ from langchain_core.embeddings import Embeddings
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
+from duckduckgo_search import DDGS
 
 load_dotenv()
 
@@ -42,6 +43,22 @@ def call_gemini(contents, config):
             print(f"[WARN] {model} failed: {e}. Trying next model...")
             continue
     raise last_error
+
+# ---------------------------------------------------------------------------
+# Live Search — DuckDuckGo (Free, Unlimited)
+# ---------------------------------------------------------------------------
+def get_live_context(query):
+    """Searches DuckDuckGo and returns top 3 results as context."""
+    try:
+        results = DDGS().text(query, max_results=3)
+        if results:
+            context = "Live search results:\n"
+            for r in results:
+                context += f"- {r.get('title')}: {r.get('body')}\n"
+            return context
+    except Exception as e:
+        print(f"[WARN] Live search failed: {e}")
+    return ""
 
 # ---------------------------------------------------------------------------
 # System instructions
@@ -273,6 +290,12 @@ def ask():
             lines.append(f"{role}: {turn.get('content', '')}")
         history_text = "\n".join(lines)
 
+    # --- Live Search Context ------------------------------------------------
+    live_search_context = ""
+    if question and len(question) > 5 and request_type == "chat":
+        # Only search if the question is substantial enough
+        live_search_context = get_live_context(question)
+
     # --- Compose prompt -----------------------------------------------------
     sections = []
 
@@ -281,6 +304,9 @@ def ask():
 
     if rag_context:
         sections.append(f"[KNOWLEDGE BASE]\n{rag_context}")
+
+    if live_search_context:
+        sections.append(f"[LIVE WEB DATA]\n{live_search_context}\nUse this live data to answer if it's relevant.")
 
     if history_text:
         sections.append(f"[CONVERSATION SO FAR]\n{history_text}")
@@ -303,7 +329,6 @@ def ask():
                 temperature=0.75,
                 top_p=0.95,
                 max_output_tokens=2048,
-                tools=[types.Tool(google_search=types.GoogleSearch())],
             )
         )
         answer = response.text.strip() if response.text else "I couldn't generate a response. Please try again."
