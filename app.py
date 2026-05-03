@@ -171,19 +171,33 @@ retriever = vector_store.as_retriever(search_kwargs={"k": 5})
 # ---------------------------------------------------------------------------
 @app.route("/ask", methods=["POST"])
 def ask():
-    data = request.get_json()
-    if not data:
-        return jsonify({"type": "chat", "answer": "Invalid request.", "error": True}), 400
-
-    request_type  = data.get("type", "chat")
-    question      = data.get("question", "").strip()
-    image_base64  = data.get("image", None)
-    audio_base64  = data.get("audio", None)
-    video_base64  = data.get("video", None)
-    files         = data.get("files", [])
-    lat           = data.get("lat", None)
-    lng           = data.get("lng", None)
-    history       = data.get("history", [])
+    if request.is_json:
+        data = request.get_json() or {}
+        if not data:
+            return jsonify({"type": "chat", "answer": "Invalid request.", "error": True}), 400
+        request_type  = data.get("type", "chat")
+        question      = data.get("question", "").strip()
+        image_base64  = data.get("image", None)
+        audio_base64  = data.get("audio", None)
+        video_base64  = data.get("video", None)
+        files         = data.get("files", [])
+        lat           = data.get("lat", None)
+        lng           = data.get("lng", None)
+        history       = data.get("history", [])
+    else:
+        # Support multipart/form-data from Flutter
+        request_type  = request.form.get("type", "chat")
+        question      = request.form.get("question", "").strip()
+        lat           = request.form.get("lat", None)
+        lng           = request.form.get("lng", None)
+        image_base64  = None
+        audio_base64  = None
+        video_base64  = None
+        files         = []
+        try:
+            history = json.loads(request.form.get("history", "[]"))
+        except Exception:
+            history = []
 
     # Limit history to last 20 turns to avoid exceeding model context
     if len(history) > 20:
@@ -274,6 +288,28 @@ def ask():
                 question = f"Please analyze this {ext} file and provide relevant information."
         except Exception:
             continue  # skip corrupted file
+
+    # 2. Handle actual uploaded files (multipart/form-data)
+    for key, file in request.files.items():
+        if file.filename == '':
+            continue
+        try:
+            raw_bytes = file.read()
+            mime_type = file.mimetype or "application/octet-stream"
+            media_parts.append(types.Part.from_bytes(data=raw_bytes, mime_type=mime_type))
+            media_labels.append(mime_type)
+            if not question:
+                if "image" in mime_type:
+                    question = "What is this? Identify it and give me useful information about it."
+                elif "audio" in mime_type:
+                    question = "Please listen to this audio and respond helpfully."
+                elif "video" in mime_type:
+                    question = "What can you tell me about this video?"
+                else:
+                    ext = mime_type.split("/")[-1]
+                    question = f"Please analyze this {ext} file and provide relevant information."
+        except Exception as e:
+            print(f"[WARN] Failed to process uploaded file: {e}")
 
     # --- RAG retrieval ------------------------------------------------------
     rag_context = ""
