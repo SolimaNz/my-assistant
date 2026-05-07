@@ -208,6 +208,12 @@ def ask():
         plan_prompt = question or "Create a 3-day Cairo itinerary"
         if lat and lng:
             plan_prompt += f" (user is at latitude {lat}, longitude {lng})"
+        if history:
+            prev = "\n".join(
+                f"{'User' if t.get('role')=='user' else 'Soli'}: {t.get('content','')}"
+                for t in history
+            )
+            plan_prompt = f"Previous conversation:\n{prev}\n\nNew request: {plan_prompt}"
 
         try:
             response = call_gemini(
@@ -245,8 +251,18 @@ def ask():
 
     if image_base64:
         try:
+            img_bytes = base64.b64decode(image_base64)
+            # Auto-detect image format from magic bytes
+            if img_bytes[:4] == b'\x89PNG':
+                img_mime = "image/png"
+            elif len(img_bytes) > 11 and img_bytes[:4] == b'RIFF' and img_bytes[8:12] == b'WEBP':
+                img_mime = "image/webp"
+            elif img_bytes[:3] == b'GIF':
+                img_mime = "image/gif"
+            else:
+                img_mime = "image/jpeg"
             media_parts.append(
-                types.Part.from_bytes(data=base64.b64decode(image_base64), mime_type="image/jpeg")
+                types.Part.from_bytes(data=img_bytes, mime_type=img_mime)
             )
             media_labels.append("an image")
             if not question:
@@ -328,7 +344,7 @@ def ask():
 
     # --- Live Search Context ------------------------------------------------
     live_search_context = ""
-    if question and len(question) > 5 and request_type == "chat":
+    if question and len(question) > 5:
         # Only search if the question is substantial enough
         live_search_context = get_live_context(question)
 
@@ -371,6 +387,13 @@ def ask():
         return jsonify({"type": "chat", "answer": answer})
     except Exception:
         return jsonify({"type": "chat", "answer": "I'm a bit overwhelmed right now, please try again in a moment.", "error": True}), 503
+
+# ---------------------------------------------------------------------------
+# /health endpoint — monitoring
+# ---------------------------------------------------------------------------
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({"status": "ok"})
 
 if __name__ == "__main__":
     app.run(port=int(os.getenv("PORT", 5000)))

@@ -1,2 +1,6 @@
 .env
 venv/
+soli_voice.py
+test_*.py
+list_*.py
+__pycache__/
