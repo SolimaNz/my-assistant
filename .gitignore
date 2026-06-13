@@ -4,3 +4,4 @@ soli_voice.py
 test_*.py
 list_*.py
 __pycache__/
+*.zip

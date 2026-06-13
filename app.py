@@ -1,12 +1,20 @@
-__import__('pysqlite3')
-import sys
-sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+try:
+    __import__('pysqlite3')
+    import sys
+    sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+    print("[INFO] Successfully swapped sqlite3 with pysqlite3-binary.")
+except ImportError:
+    print("[INFO] Using system sqlite3 (pysqlite3-binary not installed/needed).")
 
 import os
 import json
 import base64
+import asyncio
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 import requests
 from flask import Flask, request, jsonify
+from flask_sock import Sock
 from langchain_chroma import Chroma
 from langchain_core.embeddings import Embeddings
 from google import genai
@@ -17,6 +25,7 @@ from duckduckgo_search import DDGS
 load_dotenv()
 
 app = Flask(__name__)
+sock = Sock(app)
 
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
@@ -45,6 +54,19 @@ def call_gemini(contents, config):
     raise last_error
 
 # ---------------------------------------------------------------------------
+# Utility — strip markdown code fences from Gemini JSON responses
+# ---------------------------------------------------------------------------
+def clean_json_text(text):
+    """Strip markdown code fences from Gemini JSON responses."""
+    text = text.strip()
+    if text.startswith("```"):
+        # Remove opening fence (```json or ```)
+        text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+    if text.endswith("```"):
+        text = text[:-3]
+    return text.strip()
+
+# ---------------------------------------------------------------------------
 # Live Search — DuckDuckGo (Free, Unlimited)
 # ---------------------------------------------------------------------------
 def get_live_context(query):
@@ -59,6 +81,123 @@ def get_live_context(query):
     except Exception as e:
         print(f"[WARN] Live search failed: {e}")
     return ""
+
+def needs_live_search(query):
+    """Determine if a query needs live web search (e.g. real-time or dynamic info)."""
+    query_lower = query.lower().strip("?.! ")
+    
+    # Fast exclusion of short greetings and basic conversational filler
+    greetings = {
+        "hi", "hello", "hey", "hola", "salam", "ahlan", "howdy", "yo", "sup",
+        "good morning", "good afternoon", "good evening", "good night",
+        "how are you", "who are you", "what are you", "what is your name",
+        "who is soli", "tell me about yourself", "thanks", "thank you",
+        "shukran", "bye", "goodbye", "see you", "ok", "okay",
+    }
+    if query_lower in greetings or len(query_lower) < 8:
+        return False
+        
+    live_keywords = [
+        # --- Time & date words ---
+        "today", "tonight", "tomorrow", "yesterday", "now", "current",
+        "time", "hour", "minute", "when", "schedule", "date", "day",
+        "week", "weekend", "month", "year", "morning", "afternoon",
+        "evening", "night", "midnight", "noon", "sunrise", "sunset",
+        "daily", "weekly", "monthly", "yearly", "annual",
+        "this week", "next week", "last week",
+        "this month", "next month", "last month",
+        "this year", "next year", "last year",
+
+        # --- Days of the week (English + Arabic transliteration) ---
+        "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+        "الاثنين", "الثلاثاء", "الاربعاء", "الخميس", "الجمعة", "السبت", "الاحد",
+        "itneen", "talat", "arba", "khamees", "gom3a", "sabt", "hadd",
+
+        # --- Months (English) ---
+        "january", "february", "march", "april", "may", "june",
+        "july", "august", "september", "october", "november", "december",
+        # --- Months (Arabic transliteration) ---
+        "yanayer", "febrayer", "mares", "abril", "mayo", "yonyo",
+        "yolyo", "aghostos", "sebtember", "oktober", "nofember", "desember",
+        # --- Hijri months ---
+        "muharram", "safar", "rabi", "jumada", "rajab", "sha'ban", "shaban",
+        "ramadan", "shawwal", "dhul qi'dah", "dhul hijjah",
+
+        # --- Islamic prayer & religious ---
+        "prayer", "pray", "salah", "salat", "fajr", "dhuhr", "zuhr",
+        "asr", "maghrib", "isha", "athan", "adhan", "azan", "iqama",
+        "jummah", "jumu'ah", "taraweeh", "tarawih", "qiyam",
+        "eid", "eid al-fitr", "eid al-adha", "mawlid", "isra",
+        "صلاة", "فجر", "ظهر", "عصر", "مغرب", "عشاء", "اذان",
+        "رمضان", "عيد", "صلاه",
+
+        # --- Holidays & seasons ---
+        "holiday", "vacation", "christmas", "easter", "new year",
+        "sham el nessim", "revolution", "liberation",
+        "spring", "summer", "autumn", "fall", "winter", "season",
+
+        # --- Weather ---
+        "weather", "temperature", "forecast", "rain", "sunny", "hot",
+        "cold", "humid", "humidity", "wind", "storm", "cloudy", "degree",
+
+        # --- Prices, money & commerce ---
+        "price", "cost", "rate", "exchange", "currency", "dollar", "egp",
+        "pound", "euro", "fee", "fare", "charge", "salary", "wage",
+        "expensive", "cheap", "budget", "discount", "offer", "deal",
+        "كام", "بكام", "سعر", "ثمن",
+
+        # --- Travel, places & services ---
+        "open", "close", "closed", "available", "unavailable",
+        "restaurant", "hotel", "hostel", "flight", "airport", "train",
+        "metro", "bus", "uber", "careem", "taxi", "booking", "reservation",
+        "museum", "mall", "cinema", "pharmacy", "hospital", "clinic",
+        "embassy", "consulate", "bank", "atm",
+        "ticket", "entry", "admission", "visa",
+
+        # --- Real-time & dynamic ---
+        "latest", "recent", "update", "breaking", "live", "trending",
+        "news", "status", "traffic", "accident", "delay", "cancel",
+        "event", "concert", "match", "game", "show", "exhibition",
+        "festival", "ceremony", "parade", "marathon",
+        "happen", "happening", "going on",
+
+        # --- Availability & logistics ---
+        "delivery", "shipping", "order", "track", "arrive", "arrival",
+        "departure", "depart", "land", "landing", "gate", "terminal",
+        "platform", "seat", "class", "wifi", "internet", "signal",
+    ]
+    
+    # Phrases indicating dynamic information search
+    dynamic_phrases = [
+        "is it open", "are they open", "is it closed", "are they closed",
+        "how much is", "how much does", "how much do",
+        "where can i buy", "where to buy", "where can i find",
+        "what time is", "what time does", "what time do",
+        "when is", "when does", "when do", "when will",
+        "is there a", "are there any",
+        "can i visit", "can i go",
+        "how long does", "how long is", "how far is",
+        "is it safe", "is it worth",
+        "امتى", "فين", "ازاي", "بكام", "هل في",
+    ]
+    
+    if any(kw in query_lower for kw in live_keywords) or any(phrase in query_lower for phrase in dynamic_phrases):
+        return True
+        
+    # Default to False to save latency and API calls for general knowledge questions
+    return False
+
+CAIRO_TZ = ZoneInfo("Africa/Cairo")
+
+def get_cairo_datetime():
+    """Return current Cairo date, time, and timezone as a context string."""
+    now = datetime.now(CAIRO_TZ)
+    offset = now.strftime("%z")          # e.g. "+0300"
+    offset_fmt = f"UTC{offset[:3]}:{offset[3:]}"  # e.g. "UTC+03:00"
+    return (
+        f"Current local time in Egypt: {now.strftime('%I:%M %p')} "
+        f"on {now.strftime('%A, %B %d, %Y')} ({offset_fmt})"
+    )
 
 # ---------------------------------------------------------------------------
 # System instructions
@@ -179,6 +318,7 @@ def ask():
         question      = data.get("question", "").strip()
         image_base64  = data.get("image", None)
         audio_base64  = data.get("audio", None)
+        audio_mime_hint = data.get("audio_mime", None)
         video_base64  = data.get("video", None)
         files         = data.get("files", [])
         lat           = data.get("lat", None)
@@ -192,6 +332,7 @@ def ask():
         lng           = request.form.get("lng", None)
         image_base64  = None
         audio_base64  = None
+        audio_mime_hint = None
         video_base64  = None
         files         = []
         try:
@@ -226,7 +367,7 @@ def ask():
                     max_output_tokens=4096,
                 )
             )
-            plan_data = json.loads(response.text)
+            plan_data = json.loads(clean_json_text(response.text))
         except json.JSONDecodeError:
             plan_data = {"title": "Trip Plan", "days": [], "error": "Failed to generate plan, please try again."}
         except Exception:
@@ -272,8 +413,24 @@ def ask():
 
     if audio_base64:
         try:
+            audio_bytes = base64.b64decode(audio_base64)
+            # Use explicit hint from Flutter, or auto-detect from magic bytes
+            if audio_mime_hint:
+                audio_mime = audio_mime_hint
+            elif audio_bytes[:4] == b'fLaC':
+                audio_mime = "audio/flac"
+            elif audio_bytes[:4] == b'RIFF':
+                audio_mime = "audio/wav"
+            elif audio_bytes[:4] == b'OggS':
+                audio_mime = "audio/ogg"
+            elif len(audio_bytes) > 7 and audio_bytes[4:8] == b'ftyp':
+                audio_mime = "audio/mp4"  # covers .m4a / .aac containers
+            elif audio_bytes[:3] == b'ID3' or audio_bytes[:2] == b'\xff\xfb':
+                audio_mime = "audio/mp3"
+            else:
+                audio_mime = "audio/mp3"  # fallback
             media_parts.append(
-                types.Part.from_bytes(data=base64.b64decode(audio_base64), mime_type="audio/mp3")
+                types.Part.from_bytes(data=audio_bytes, mime_type=audio_mime)
             )
             media_labels.append("an audio clip")
             if not question:
@@ -312,6 +469,28 @@ def ask():
         try:
             raw_bytes = file.read()
             mime_type = file.mimetype or "application/octet-stream"
+            
+            # Auto-detect image or audio MIME type if generic
+            if mime_type in ("application/octet-stream", "application/x-binary"):
+                if raw_bytes[:4] == b'\x89PNG':
+                    mime_type = "image/png"
+                elif len(raw_bytes) > 11 and raw_bytes[:4] == b'RIFF' and raw_bytes[8:12] == b'WEBP':
+                    mime_type = "image/webp"
+                elif raw_bytes[:3] == b'GIF':
+                    mime_type = "image/gif"
+                elif raw_bytes[:2] == b'\xff\xd8':
+                    mime_type = "image/jpeg"
+                elif raw_bytes[:4] == b'fLaC':
+                    mime_type = "audio/flac"
+                elif raw_bytes[:4] == b'RIFF':
+                    mime_type = "audio/wav"
+                elif raw_bytes[:4] == b'OggS':
+                    mime_type = "audio/ogg"
+                elif len(raw_bytes) > 7 and raw_bytes[4:8] == b'ftyp':
+                    mime_type = "audio/mp4"
+                elif raw_bytes[:3] == b'ID3' or raw_bytes[:2] == b'\xff\xfb':
+                    mime_type = "audio/mp3"
+
             media_parts.append(types.Part.from_bytes(data=raw_bytes, mime_type=mime_type))
             media_labels.append(mime_type)
             if not question:
@@ -344,9 +523,12 @@ def ask():
 
     # --- Live Search Context ------------------------------------------------
     live_search_context = ""
-    if question and len(question) > 5:
-        # Only search if the question is substantial enough
+    time_context = ""
+    if question and needs_live_search(question):
+        # Only search if the question asks for real-time/dynamic information
         live_search_context = get_live_context(question)
+        # Inject current Cairo time for any time-sensitive query
+        time_context = get_cairo_datetime()
 
     # --- Compose prompt -----------------------------------------------------
     sections = []
@@ -356,6 +538,9 @@ def ask():
 
     if rag_context:
         sections.append(f"[KNOWLEDGE BASE]\n{rag_context}")
+
+    if time_context:
+        sections.append(f"[CURRENT TIME & DATE]\n{time_context}")
 
     if live_search_context:
         sections.append(f"[LIVE WEB DATA]\n{live_search_context}\nUse this live data to answer if it's relevant.")
@@ -394,6 +579,113 @@ def ask():
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok"})
+
+# ---------------------------------------------------------------------------
+# /voice WebSocket — real-time voice call proxy (Flutter <-> Gemini Live API)
+# ---------------------------------------------------------------------------
+SOLI_VOICE_SYSTEM = """You are Soli, a smart and friendly virtual assistant for anyone in Egypt.
+You're not just a tour guide — you're a local expert who helps with EVERYTHING:
+tourism, daily life, emergencies, language, transportation, shopping, food,
+health, legal questions, scams, cultural tips, and anything else someone
+in Egypt might need help with.
+
+Core rules:
+- Keep your spoken responses concise and natural — this is a live voice call,
+  not a text chat. Nobody wants to listen to a 5-paragraph essay.
+- Match the user's energy. Short question → short answer. Deep question → deep answer.
+- Talk like a real person having a conversation. Be warm, helpful, and a little witty.
+- Always reply in the same language the user speaks.
+- Share insider tips, local slang, price expectations, and safety heads-ups
+  when they're relevant — don't force them into every answer.
+- If someone is in trouble (lost passport, medical issue, police),
+  give clear and calm step-by-step guidance.
+- Go beyond typical tourist spots. Recommend the real local Egyptian experience.
+- If you don't know something, say so honestly rather than making it up.
+- Never start your response with "Great question!" or similar filler.
+- Remember: you are speaking out loud, so use natural speech patterns,
+  pauses, and conversational flow."""
+
+@sock.route('/voice')
+def voice_stream(ws):
+    """WebSocket proxy: Flutter <-> Gemini Live API for real-time voice."""
+    print("[Voice] Client connected")
+
+    async def _run():
+        live_config = types.LiveConnectConfig(
+            response_modalities=["AUDIO"],
+            system_instruction=SOLI_VOICE_SYSTEM,
+            speech_config=types.SpeechConfig(
+                voice_config=types.VoiceConfig(
+                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                        voice_name="Aoede"
+                    )
+                )
+            ),
+        )
+
+        model = "gemini-2.5-flash-native-audio-latest"
+
+        async with client.aio.live.connect(model=model, config=live_config) as session:
+            # Notify Flutter that the voice session is ready
+            ws.send(b"READY")
+            print("[Voice] Gemini session ready, streaming started")
+
+            stop_event = asyncio.Event()
+
+            async def forward_to_gemini():
+                """Read audio bytes from Flutter WebSocket, forward to Gemini."""
+                while not stop_event.is_set():
+                    try:
+                        # Run blocking ws.receive in a thread so it doesn't freeze the event loop
+                        data = await asyncio.to_thread(ws.receive, 0.05)
+                    except Exception:
+                        # Connection closed or error — stop
+                        stop_event.set()
+                        break
+
+                    if data is None:
+                        # Timeout — no data yet, just keep waiting
+                        continue
+
+                    if isinstance(data, bytes) and len(data) > 0:
+                        try:
+                            await session.send_realtime_input(
+                                audio=types.Blob(
+                                    data=data,
+                                    mime_type="audio/pcm;rate=16000"
+                                )
+                            )
+                        except Exception:
+                            stop_event.set()
+                            break
+
+            async def forward_to_flutter():
+                """Read audio response from Gemini, send back to Flutter."""
+                while not stop_event.is_set():
+                    try:
+                        async for response in session.receive():
+                            if stop_event.is_set():
+                                break
+                            server_content = response.server_content
+                            if server_content and server_content.model_turn:
+                                for part in server_content.model_turn.parts:
+                                    if part.inline_data:
+                                        ws.send(part.inline_data.data)
+                    except Exception:
+                        stop_event.set()
+                        break
+
+            await asyncio.gather(
+                forward_to_gemini(),
+                forward_to_flutter()
+            )
+
+    try:
+        asyncio.run(_run())
+    except Exception as e:
+        print(f"[Voice] Session ended: {e}")
+    finally:
+        print("[Voice] Client disconnected")
 
 if __name__ == "__main__":
     app.run(port=int(os.getenv("PORT", 5000)))
