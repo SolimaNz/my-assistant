@@ -69,10 +69,14 @@ def clean_json_text(text):
 # ---------------------------------------------------------------------------
 # Live Search — DuckDuckGo (Free, Unlimited)
 # ---------------------------------------------------------------------------
-def get_live_context(query):
-    """Searches DuckDuckGo and returns top 3 results as context."""
+def get_live_context(query, lat=None, lng=None):
+    """Searches DuckDuckGo and returns top 3 results as context.
+    If GPS coordinates are available, appends them to localize the search."""
     try:
-        results = DDGS().text(query, max_results=3)
+        search_query = query
+        if lat and lng:
+            search_query = f"{query} near latitude {lat}, longitude {lng}"
+        results = DDGS().text(search_query, max_results=3)
         if results:
             context = "Live search results:\n"
             for r in results:
@@ -83,109 +87,27 @@ def get_live_context(query):
     return ""
 
 def needs_live_search(query):
-    """Determine if a query needs live web search (e.g. real-time or dynamic info)."""
+    """Search ALWAYS, unless it's clearly a greeting or filler.
+    This ensures every real question — in any language — gets live data."""
     query_lower = query.lower().strip("?.! ")
-    
-    # Fast exclusion of short greetings and basic conversational filler
-    greetings = {
+
+    # Small exclusion list — only skip search for obvious greetings/filler
+    skip_phrases = {
         "hi", "hello", "hey", "hola", "salam", "ahlan", "howdy", "yo", "sup",
         "good morning", "good afternoon", "good evening", "good night",
         "how are you", "who are you", "what are you", "what is your name",
-        "who is soli", "tell me about yourself", "thanks", "thank you",
-        "shukran", "bye", "goodbye", "see you", "ok", "okay",
+        "who is soli", "tell me about yourself",
+        "thanks", "thank you", "shukran", "merci",
+        "bye", "goodbye", "see you", "ok", "okay",
+        "مرحبا", "اهلا", "شكرا", "مع السلامة",
     }
-    if query_lower in greetings or len(query_lower) < 8:
+
+    # Short filler (under 5 chars like "hi", "ok", "yo") or exact greeting match
+    if query_lower in skip_phrases or len(query_lower) < 5:
         return False
-        
-    live_keywords = [
-        # --- Time & date words ---
-        "today", "tonight", "tomorrow", "yesterday", "now", "current",
-        "time", "hour", "minute", "when", "schedule", "date", "day",
-        "week", "weekend", "month", "year", "morning", "afternoon",
-        "evening", "night", "midnight", "noon", "sunrise", "sunset",
-        "daily", "weekly", "monthly", "yearly", "annual",
-        "this week", "next week", "last week",
-        "this month", "next month", "last month",
-        "this year", "next year", "last year",
 
-        # --- Days of the week (English + Arabic transliteration) ---
-        "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
-        "الاثنين", "الثلاثاء", "الاربعاء", "الخميس", "الجمعة", "السبت", "الاحد",
-        "itneen", "talat", "arba", "khamees", "gom3a", "sabt", "hadd",
-
-        # --- Months (English) ---
-        "january", "february", "march", "april", "may", "june",
-        "july", "august", "september", "october", "november", "december",
-        # --- Months (Arabic transliteration) ---
-        "yanayer", "febrayer", "mares", "abril", "mayo", "yonyo",
-        "yolyo", "aghostos", "sebtember", "oktober", "nofember", "desember",
-        # --- Hijri months ---
-        "muharram", "safar", "rabi", "jumada", "rajab", "sha'ban", "shaban",
-        "ramadan", "shawwal", "dhul qi'dah", "dhul hijjah",
-
-        # --- Islamic prayer & religious ---
-        "prayer", "pray", "salah", "salat", "fajr", "dhuhr", "zuhr",
-        "asr", "maghrib", "isha", "athan", "adhan", "azan", "iqama",
-        "jummah", "jumu'ah", "taraweeh", "tarawih", "qiyam",
-        "eid", "eid al-fitr", "eid al-adha", "mawlid", "isra",
-        "صلاة", "فجر", "ظهر", "عصر", "مغرب", "عشاء", "اذان",
-        "رمضان", "عيد", "صلاه",
-
-        # --- Holidays & seasons ---
-        "holiday", "vacation", "christmas", "easter", "new year",
-        "sham el nessim", "revolution", "liberation",
-        "spring", "summer", "autumn", "fall", "winter", "season",
-
-        # --- Weather ---
-        "weather", "temperature", "forecast", "rain", "sunny", "hot",
-        "cold", "humid", "humidity", "wind", "storm", "cloudy", "degree",
-
-        # --- Prices, money & commerce ---
-        "price", "cost", "rate", "exchange", "currency", "dollar", "egp",
-        "pound", "euro", "fee", "fare", "charge", "salary", "wage",
-        "expensive", "cheap", "budget", "discount", "offer", "deal",
-        "كام", "بكام", "سعر", "ثمن",
-
-        # --- Travel, places & services ---
-        "open", "close", "closed", "available", "unavailable",
-        "restaurant", "hotel", "hostel", "flight", "airport", "train",
-        "metro", "bus", "uber", "careem", "taxi", "booking", "reservation",
-        "museum", "mall", "cinema", "pharmacy", "hospital", "clinic",
-        "embassy", "consulate", "bank", "atm",
-        "ticket", "entry", "admission", "visa",
-
-        # --- Real-time & dynamic ---
-        "latest", "recent", "update", "breaking", "live", "trending",
-        "news", "status", "traffic", "accident", "delay", "cancel",
-        "event", "concert", "match", "game", "show", "exhibition",
-        "festival", "ceremony", "parade", "marathon",
-        "happen", "happening", "going on",
-
-        # --- Availability & logistics ---
-        "delivery", "shipping", "order", "track", "arrive", "arrival",
-        "departure", "depart", "land", "landing", "gate", "terminal",
-        "platform", "seat", "class", "wifi", "internet", "signal",
-    ]
-    
-    # Phrases indicating dynamic information search
-    dynamic_phrases = [
-        "is it open", "are they open", "is it closed", "are they closed",
-        "how much is", "how much does", "how much do",
-        "where can i buy", "where to buy", "where can i find",
-        "what time is", "what time does", "what time do",
-        "when is", "when does", "when do", "when will",
-        "is there a", "are there any",
-        "can i visit", "can i go",
-        "how long does", "how long is", "how far is",
-        "is it safe", "is it worth",
-        "امتى", "فين", "ازاي", "بكام", "هل في",
-    ]
-    
-    if any(kw in query_lower for kw in live_keywords) or any(phrase in query_lower for phrase in dynamic_phrases):
-        return True
-        
-    # Default to False to save latency and API calls for general knowledge questions
-    return False
+    # Everything else → search for the best possible answer
+    return True
 
 CAIRO_TZ = ZoneInfo("Africa/Cairo")
 
@@ -525,9 +447,7 @@ def ask():
     live_search_context = ""
     time_context = ""
     if question and needs_live_search(question):
-        # Only search if the question asks for real-time/dynamic information
-        live_search_context = get_live_context(question)
-        # Inject current Cairo time for any time-sensitive query
+        live_search_context = get_live_context(question, lat, lng)
         time_context = get_cairo_datetime()
 
     # --- Compose prompt -----------------------------------------------------
