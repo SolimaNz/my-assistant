@@ -116,7 +116,6 @@ Run the full test suite before pushing:
 ```bash
 python -m unittest test_all -v
 ```
-
 ---
 
 ## ☁️ Azure App Service Deployment
