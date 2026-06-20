@@ -290,6 +290,10 @@ def ask():
                 )
             )
             plan_data = json.loads(clean_json_text(response.text))
+            # Inject sequential display IDs for Flutter activity cards
+            for day in plan_data.get("days", []):
+                for idx, act in enumerate(day.get("activities", []), start=1):
+                    act["id"] = idx
         except json.JSONDecodeError:
             plan_data = {"title": "Trip Plan", "days": [], "error": "Failed to generate plan, please try again."}
         except Exception:

@@ -142,3 +142,5 @@ zstandard==0.25.0
 duckduckgo-search
 flask-sock
 tzdata
+pypdf
+docx2txt

@@ -41,6 +41,7 @@ LLMs have no concept of real-time clocks. Soli resolves this by injecting a prec
 
 ### 5. Structured Trip Planner (JSON Engine)
 When requested, Soli switches context to a specialized planning agent. Using structured schemas, it generates a complete day-by-day JSON response containing:
+- **Sequential activity IDs** (`id: 1, 2, 3…`) injected per day for direct use in frontend card displays.
 - Activities sorted logically by geographic coordinates to minimize travel time.
 - Accurate coordinates (`lat` and `lng`) for mapping on the frontend.
 - Parallel pricing estimates in both **USD** and **EGP**.
@@ -101,10 +102,13 @@ PORT=5000
 ```
 
 ### 3. RAG Initialization
-To index your custom local knowledge files:
+Drop your knowledge files into the `data/` folder and run the setup script to embed them into ChromaDB:
 ```bash
 python rag_setup.py
 ```
+Supported file types: `.txt`, `.md`, `.pdf`, `.csv`, `.json`, `.docx`, `.html`
+
+The script auto-discovers all files in `data/` — no code changes needed when adding new files.
 
 ### 4. Running Locally
 ```bash
