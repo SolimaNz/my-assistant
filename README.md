@@ -108,7 +108,7 @@ python rag_setup.py
 ```
 Supported file types: `.txt`, `.md`, `.pdf`, `.csv`, `.json`, `.docx`, `.html`
 
-The script auto-discovers all files in `data/` — no code changes needed when adding new files.
+The script auto-discovers all files in `data/` and uses **incremental embedding** — only new or modified files are processed. Unchanged files are skipped automatically, saving API quota. Deleted files have their embeddings removed from ChromaDB.
 
 ### 4. Running Locally
 ```bash
