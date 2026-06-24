@@ -1,2 +1,0 @@
-Artificial Intelligence is the simulation of human intelligence in machines that are programmed to think and learn like humans.
-Machine learning is a subset of AI that enables systems to learn automatically from data.

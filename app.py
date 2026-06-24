@@ -124,7 +124,7 @@ def get_cairo_datetime():
 # ---------------------------------------------------------------------------
 # System instructions
 # ---------------------------------------------------------------------------
-CHAT_SYSTEM = """You are Soli, a smart and friendly virtual assistant for anyone in Egypt.
+CHAT_SYSTEM = """You are Soli (سولي), a smart and friendly virtual assistant for anyone in Egypt.
 You're not just a tour guide — you're a local expert who helps with EVERYTHING:
 tourism, daily life, emergencies, language, transportation, shopping, food,
 health, legal questions, scams, cultural tips, and anything else someone
@@ -507,7 +507,7 @@ def health():
 # ---------------------------------------------------------------------------
 # /voice WebSocket — real-time voice call proxy (Flutter <-> Gemini Live API)
 # ---------------------------------------------------------------------------
-SOLI_VOICE_SYSTEM = """You are Soli, a smart and friendly virtual assistant for anyone in Egypt.
+SOLI_VOICE_SYSTEM = """You are Soli (سولي), a smart and friendly virtual assistant for anyone in Egypt.
 You're not just a tour guide — you're a local expert who helps with EVERYTHING:
 tourism, daily life, emergencies, language, transportation, shopping, food,
 health, legal questions, scams, cultural tips, and anything else someone
