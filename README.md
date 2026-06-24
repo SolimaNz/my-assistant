@@ -6,7 +6,7 @@ Unlike generic chatbots, Soli is engineered to act as a **digital local companio
 
 ---
 
-## 🌟 Extended Project Overview
+##  Extended Project Overview
 
 Traveling or living in Egypt often presents unique challenges—from understanding local pricing and navigation to cultural customs, local slang, transportation logistics, and emergency services. 
 
@@ -14,7 +14,7 @@ Soli solves this by acting as a single, comprehensive gateway. Whether a user wa
 
 ---
 
-## 🛠️ Core Capabilities
+##  Core Capabilities
 
 ### 1. Multimodal Context Ingestion (`/ask`)
 Soli doesn't just read text; it understands the world around it. The backend accepts and parses:
@@ -55,7 +55,7 @@ Soli provides a bi-directional WebSocket interface mapping to Gemini's native au
 
 ---
 
-## 📐 System Architecture
+##  System Architecture
 
 ```
                        +-------------------+
@@ -83,7 +83,7 @@ Soli provides a bi-directional WebSocket interface mapping to Gemini's native au
 
 ---
 
-## ⚡ Setup & Local Development
+##  Setup & Local Development
 
 ### 1. Installation
 Clone the repository and install the required dependencies:
@@ -122,7 +122,7 @@ python -m unittest test_all -v
 ```
 ---
 
-## ☁️ Azure App Service Deployment
+##  Azure App Service Deployment
 
 Soli is designed for deployment on **Azure App Service (Linux)**.
 
